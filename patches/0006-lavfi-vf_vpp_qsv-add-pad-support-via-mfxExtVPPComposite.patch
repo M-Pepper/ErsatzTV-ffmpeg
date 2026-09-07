@@ -1,7 +1,5 @@
-From 268e9af2a8784b6ed644a8031fd80323f9bc671a Mon Sep 17 00:00:00 2001
 From: McKenzie Pepper <mapepp2@protonmail.com>
-Date: Wed, 29 Jul 2026 19:46:14 -0400
-Subject: [PATCH 1/2] lavfi/vf_vpp_qsv: add pad support via mfxExtVPPComposite
+Subject: [PATCH] lavfi/vf_vpp_qsv: add pad support via mfxExtVPPComposite
 
 ffmpeg has pad_vaapi but no QSV equivalent, and vpp_qsv exposes input crop
 and scale but no way to pad. Any QSV pipeline needing aspect correction to a
@@ -63,7 +61,7 @@ pad_color (default black).
  1 file changed, 106 insertions(+), 3 deletions(-)
 
 diff --git a/libavfilter/vf_vpp_qsv.c b/libavfilter/vf_vpp_qsv.c
-index 4de99d6..c9f98e2 100644
+index 4de99d6490..c9f98e2d5e 100644
 --- a/libavfilter/vf_vpp_qsv.c
 +++ b/libavfilter/vf_vpp_qsv.c
 @@ -25,6 +25,7 @@
@@ -241,8 +239,3 @@ index 4de99d6..c9f98e2 100644
      { "w",      "Output video width(0=input video width, -1=keep input video aspect)",  OFFSET(ow), AV_OPT_TYPE_STRING, { .str="cw" }, 0, 255, .flags = FLAGS },
      { "width",  "Output video width(0=input video width, -1=keep input video aspect)",  OFFSET(ow), AV_OPT_TYPE_STRING, { .str="cw" }, 0, 255, .flags = FLAGS },
      { "h",      "Output video height(0=input video height, -1=keep input video aspect)", OFFSET(oh), AV_OPT_TYPE_STRING, { .str="w*ch/cw" }, 0, 255, .flags = FLAGS },
-
-base-commit: cd1f545cf27ba08f6f5b31b1e92665d7874d4fd7
--- 
-2.55.0
-

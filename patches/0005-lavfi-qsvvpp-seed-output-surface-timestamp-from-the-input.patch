@@ -1,8 +1,5 @@
-From 664f697e80a1e9f4ab397a04a7b2d14d55f685e0 Mon Sep 17 00:00:00 2001
 From: McKenzie Pepper <mapepp2@protonmail.com>
-Date: Wed, 29 Jul 2026 20:37:24 -0400
-Subject: [PATCH 2/2] lavfi/qsvvpp: seed output surface timestamp from the
- input
+Subject: [PATCH] lavfi/qsvvpp: seed output surface timestamp from the input
 
 MFX writes the output surface's Data.TimeStamp itself for most VPP operations,
 but composition (mfxExtVPPComposite) leaves it untouched. ff_qsvvpp_filter_frame
@@ -21,7 +18,7 @@ is a no-op wherever MFX supplies its own timestamp.
  1 file changed, 8 insertions(+)
 
 diff --git a/libavfilter/qsvvpp.c b/libavfilter/qsvvpp.c
-index c3685f1..60195ee 100644
+index c3685f126c..60195eed74 100644
 --- a/libavfilter/qsvvpp.c
 +++ b/libavfilter/qsvvpp.c
 @@ -1000,6 +1000,14 @@ int ff_qsvvpp_filter_frame(QSVVPPContext *s, AVFilterLink *inlink, AVFrame *picr
@@ -39,6 +36,3 @@ index c3685f1..60195ee 100644
          do {
              ret = MFXVideoVPP_RunFrameVPPAsync(s->session, &in_frame->surface,
                                                 &out_frame->surface, NULL, &sync);
--- 
-2.55.0
-
