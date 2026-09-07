@@ -27,6 +27,7 @@ ENV AOM=v3.14.1 \
     LIBVA=2.23.0 \
     LIBVDPAU=1.5 \
     LIBWEBP=1.6.0 \
+    MESA=26.0.3 \
     NVCODEC=11.1.5.3 \
     OGG=1.3.5 \
     OPENCOREAMR=0.1.6 \
@@ -62,6 +63,8 @@ RUN apt-get -yqq update && \
     apt-get -yq --no-install-recommends install -y \
     autoconf \
     automake \
+    autopoint \
+    bison \
     bzip2 \
     ca-certificates \
     clang \
@@ -70,11 +73,14 @@ RUN apt-get -yqq update && \
     diffutils \
     doxygen \
     expat \
+    flex \
     g++ \
     gcc \
+    gettext \
     git \
     gperf \
     jq \
+    libelf-dev \
     libexpat1-dev \
     libxext-dev \
     libgcc-9-dev \
@@ -95,6 +101,7 @@ RUN apt-get -yqq update && \
     libxcb-shape0-dev \
     libxml2-dev \
     libxrandr-dev \
+    libzstd-dev \
     make \
     nasm \
     ocl-icd-opencl-dev \
@@ -187,10 +194,11 @@ RUN cd /tmp/freetype && \
 # fontconfig
 RUN mkdir -p /tmp/fontconfig && \
     curl -Lf \
-    https://www.freedesktop.org/software/fontconfig/release/fontconfig-${FONTCONFIG}.tar.xz | \
-    tar -Jx --strip-components=1 -C /tmp/fontconfig
+    https://github.com/fontconfig/fontconfig/archive/refs/tags/${FONTCONFIG}.tar.gz | \
+    tar -zx --strip-components=1 -C /tmp/fontconfig
 RUN cd /tmp/fontconfig && \
-    ./configure \
+    ./autogen.sh \
+    --disable-cache-build \
     --disable-static \
     --enable-shared && \
     make && \
@@ -270,6 +278,9 @@ RUN mkdir /tmp/libdav1d/build && cd /tmp/libdav1d/build && \
     ninja install
 
 # libgl
+# prefix=/usr so the EGL vendor dir is /usr/share/glvnd/egl_vendor.d, where the
+# nvidia container runtime and mesa put their vendor json; a /usr/local prefix
+# hides them, which breaks the nvidia vulkan icd (it enumerates devices via EGL)
 RUN mkdir -p /tmp/libgl && \
     curl -Lf \
     https://gitlab.freedesktop.org/glvnd/libglvnd/-/archive/v${LIBGL}/libglvnd-v${LIBGL}.tar.gz | \
@@ -277,7 +288,8 @@ RUN mkdir -p /tmp/libgl && \
 RUN cd /tmp/libgl && \
     meson setup \
     --buildtype=release \
-    --libdir=lib/x86_64-linux-gnu \
+    --prefix=/usr \
+    --libdir=/usr/local/lib/x86_64-linux-gnu \
     build && \
     ninja -C build install && \
     strip -d \
@@ -312,18 +324,6 @@ RUN mkdir -p /tmp/libdovi && \
 RUN cd /tmp/libdovi/dolby_vision && \
     cargo cinstall --release --libdir=/usr/local/lib/x86_64-linux-gnu && \
     strip -d /usr/local/lib/x86_64-linux-gnu/libdovi.so
-
-# libplacebo
-RUN mkdir -p /tmp/libplacebo && \
-    git clone \
-    --branch v${LIBPLACEBO} \
-    --recursive https://code.videolan.org/videolan/libplacebo \
-    /tmp/libplacebo
-RUN cd /tmp/libplacebo && \
-    meson setup \
-    --prefix=/usr --libdir=/usr/local/lib/x86_64-linux-gnu \
-    . build --buildtype release && \
-    ninja -C build install
 
 # libsrt
 RUN mkdir -p /tmp/libsrt && \
@@ -395,6 +395,39 @@ RUN mkdir -p /tmp/ihd/build && \
     make && \
     make install && \
     strip -d /usr/local/lib/x86_64-linux-gnu/dri/iHD_drv_video.so
+
+# mesa gallium va drivers
+# must be built against the libva above: the va frontend gates
+# VASurfaceAttribAlignmentSize behind a compile-time VA_CHECK_VERSION(1, 21, 0),
+# so distro mesa built against an older libva reports no encode alignment
+RUN mkdir -p /tmp/mesa && \
+    curl -Lf \
+    https://archive.mesa3d.org/mesa-${MESA}.tar.xz | \
+    tar -Jx --strip-components=1 -C /tmp/mesa
+RUN cd /tmp/mesa && \
+    meson setup build \
+    --prefix=/usr/local \
+    --libdir=lib/x86_64-linux-gnu \
+    --buildtype=release \
+    -Dgallium-drivers=radeonsi,r600,nouveau,virgl \
+    -Dvulkan-drivers= \
+    -Dplatforms= \
+    -Dgallium-va=enabled \
+    -Dva-libs-path=/usr/local/lib/x86_64-linux-gnu/dri \
+    -Dvideo-codecs=all \
+    -Dllvm=disabled \
+    -Damd-use-llvm=false \
+    -Dopengl=false \
+    -Dgles1=disabled \
+    -Dgles2=disabled \
+    -Dglx=disabled \
+    -Degl=disabled \
+    -Dgbm=disabled \
+    -Dshared-glapi=disabled \
+    -Dgallium-rusticl=false \
+    -Dbuild-tests=false && \
+    ninja -C build install && \
+    strip -d /usr/local/lib/x86_64-linux-gnu/dri/libgallium_drv_video.so
 
 # shaderc
 RUN mkdir -p /tmp/shaderc && \
@@ -560,6 +593,23 @@ RUN cd /tmp/vulkan-loader && \
     .. && \
     make && \
     make install
+
+# libplacebo
+# must build after shaderc and vulkan; meson defaults both to 'auto', so building
+# earlier silently produces a libplacebo with no spir-v compiler, which fails at
+# runtime with "Failed initializing any SPIR-V compiler"
+RUN mkdir -p /tmp/libplacebo && \
+    git clone \
+    --branch v${LIBPLACEBO} \
+    --recursive https://code.videolan.org/videolan/libplacebo \
+    /tmp/libplacebo
+RUN cd /tmp/libplacebo && \
+    meson setup \
+    --prefix=/usr --libdir=/usr/local/lib/x86_64-linux-gnu \
+    -Dvulkan=enabled \
+    -Dshaderc=enabled \
+    . build --buildtype release && \
+    ninja -C build install
 
 # x264
 RUN mkdir -p /tmp/x264 && \
@@ -792,7 +842,11 @@ RUN apt-get -yqq update && \
     apt-get autoremove -y && \
     apt-get clean -y && \
     rm /usr/lib/x86_64-linux-gnu/dri/iHD_drv_video.so && \
-    ln -s /usr/local/lib/x86_64-linux-gnu/dri/iHD_drv_video.so /usr/lib/x86_64-linux-gnu/dri/iHD_drv_video.so
+    ln -s /usr/local/lib/x86_64-linux-gnu/dri/iHD_drv_video.so /usr/lib/x86_64-linux-gnu/dri/iHD_drv_video.so && \
+    for d in radeonsi r600 nouveau virtio_gpu; do \
+    rm -f /usr/lib/x86_64-linux-gnu/dri/${d}_drv_video.so && \
+    ln -s /usr/local/lib/x86_64-linux-gnu/dri/${d}_drv_video.so /usr/lib/x86_64-linux-gnu/dri/${d}_drv_video.so; \
+    done
 
 CMD         ["--help"]
 ENTRYPOINT  ["ffmpeg"]
